@@ -209,13 +209,16 @@ pub fn inflate(in_buffer: &[u8], tree: &Word) -> Vec<u8> {
     let mut acc = 0;
     let mut filled_bits: usize = 3; // 3 bits for total_bits mod 8
 
+    // FIXME: Panic when encoded.value exeeds 8 bits (subtract with overflow
+    // when getting the remaining number of bits)
     for b in in_buffer {
         let encoded = encode(tree, *b).unwrap();
 
         let to_fill = 8 - filled_bits;
         if to_fill < encoded.bits {
             // select the last n bits to fill the current byte
-            acc |= encoded.value & ((1 << to_fill) - 1);
+            let mask = 1 << to_fill;
+            acc |= (encoded.value & (mask - 1)) << filled_bits;
             out_buf.push(acc as u8);
 
             // keep the last (8-n) bytes and put it into acc
@@ -234,5 +237,42 @@ pub fn inflate(in_buffer: &[u8], tree: &Word) -> Vec<u8> {
     // put the number of remaining bits at the last byte in the 3 first 
     // bits of the first byte
     out_buf[0] = ((out_buf[0] as usize) | (filled_bits % 8)) as u8;
+    out_buf
+}
+
+pub fn deflate(in_buffer: &[u8], tree: &Word) -> Vec<u8> {
+    let mut out_buf = Vec::new();
+    let len = in_buffer.len();
+    if len == 0 {
+        return out_buf
+    }
+
+    let mut i: usize = 3; // skip first 3 bits
+
+    let last_bits = in_buffer[0] & 0b111;
+    let len = (len-1)*8 + last_bits as usize; // exact number of bits in message
+    let mut current_node = tree;
+
+    while i < len {
+        let idx = i / 8;
+        let cursor = i % 8;
+
+        let b = in_buffer[idx];
+        let dir = (b >> cursor) & 1;
+
+        if dir == 0 { // follow path
+            current_node = current_node.left.as_ref().unwrap();
+        } else {
+            current_node = current_node.right.as_ref().unwrap();
+        }
+
+        if !current_node.is_empty { // found a leaf
+            out_buf.push(current_node.value);
+            current_node = tree;
+        }
+
+        i += 1;
+    }
+
     out_buf
 }

@@ -1,5 +1,5 @@
 use std::io::{self, Write};
-use sozip::{SZEntry, Word, decode, encode, fill_dict, build_tree, inflate};
+use sozip::{SZEntry, Word, decode, encode, fill_dict, build_tree, inflate, deflate};
 
 fn main() {
     print!("> ");
@@ -20,23 +20,25 @@ fn main() {
         print!("{}", entry);
     }
     println!();
-    println!("in {}b vs {}b", 1 + ((total - 1) / 8), message.len());
-    let decoded: Vec<Option<u8>> = encoded.into_iter()
-        .map(|entry| decode(&tree, entry)).collect();
-    for entry in &decoded {
-        if let Some(c) = entry {
-            print!("{}", *c as char);
-        } else {
-            print!("_");
-        }
+
+    let decoded: Vec<u8> = encoded.into_iter()
+        .filter_map(|entry| decode(&tree, entry)).collect();
+    assert_eq!(decoded.as_slice(), message);
+
+    print!("Inflating... ");
+    let buf = inflate(message, &tree);
+    println!("{}b vs {}b", buf.len(), message.len());
+    for entry in &buf {
+        print!("{:#010b} ", entry);
     }
     println!();
-    let decoded: Vec<u8> = decoded.into_iter().flatten().collect();
-    assert_eq!(decoded.as_slice(), message);
-    let buf = inflate(message, &tree);
-    for entry in buf {
-        println!("{:#010b}", entry);
+    println!("Deflating...");
+    let buf = deflate(buf.as_slice(), &tree);
+    for entry in &buf {
+        print!("{}", *entry as char);
     }
+    println!();
+    assert_eq!(buf.as_slice(), message);
 }
 
 #[allow(dead_code)]
